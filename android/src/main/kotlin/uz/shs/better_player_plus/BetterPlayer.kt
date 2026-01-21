@@ -383,7 +383,14 @@ internal class BetterPlayer(
             if (lastPathSegment == null) {
                 lastPathSegment = ""
             }
-            type = Util.inferContentTypeForExtension(lastPathSegment.split(".")[1])
+            // Safely extract file extension - get the last part after splitting by "."
+            val pathParts = lastPathSegment.split(".")
+            val extension = if (pathParts.size > 1) {
+                pathParts.last()
+            } else {
+                ""
+            }
+            type = Util.inferContentTypeForExtension(extension)
         } else {
             type = when (formatHint) {
                 FORMAT_SS -> C.CONTENT_TYPE_SS
