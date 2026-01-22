@@ -1204,28 +1204,28 @@ class BetterPlayerController {
   ///Dispose BetterPlayerController. When [forceDispose] parameter is true, then
   ///autoDispose parameter will be overridden and controller will be disposed
   ///(if it wasn't disposed before).
-  void dispose({bool forceDispose = false}) {
+  Future<void> dispose({bool forceDispose = false}) async {
     if (!betterPlayerConfiguration.autoDispose && !forceDispose) {
       return;
     }
     if (!_disposed) {
       if (videoPlayerController != null) {
-        pause();
+        await pause();
         videoPlayerController!.removeListener(_onFullScreenStateChanged);
         videoPlayerController!.removeListener(_onVideoPlayerChanged);
-        videoPlayerController!.dispose();
+        await videoPlayerController!.dispose();
       }
       _eventListeners.clear();
       _nextVideoTimer?.cancel();
-      _nextVideoTimeStreamController.close();
-      _controlsVisibilityStreamController.close();
-      _videoEventStreamSubscription?.cancel();
+      await _nextVideoTimeStreamController.close();
+      await _controlsVisibilityStreamController.close();
+      await _videoEventStreamSubscription?.cancel();
       _disposed = true;
-      _controllerEventStreamController.close();
+      await _controllerEventStreamController.close();
 
-      ///Delete files async
+      // Delete files async (fire-and-forget)
       for (final file in _tempFiles) {
-        file.delete();
+        unawaited(file.delete());
       }
     }
   }
