@@ -206,6 +206,53 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
       _channel.invokeMethod<void>('stopPreCache', <String, dynamic>{'url': url, 'cacheKey': cacheKey});
 
   @override
+  Future<bool> isHdrSupported() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('isHdrSupported');
+      return result ?? false;
+    } catch (e) {
+      // Method not implemented on this platform
+      return false;
+    }
+  }
+
+  @override
+  Future<List<String>> getSupportedHdrFormats() async {
+    try {
+      final List<dynamic>? result = await _channel.invokeMethod<List<dynamic>>('getSupportedHdrFormats');
+      return result?.map((e) => e.toString()).toList() ?? <String>[];
+    } catch (e) {
+      // Method not implemented on this platform
+      return <String>[];
+    }
+  }
+
+  @override
+  Future<bool> isWideColorGamutSupported() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('isWideColorGamutSupported');
+      return result ?? false;
+    } catch (e) {
+      // Method not implemented on this platform
+      return false;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getVideoMetadata(int? textureId) async {
+    try {
+      final Map<dynamic, dynamic>? result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'getVideoMetadata',
+        <String, dynamic>{'textureId': textureId},
+      );
+      return result != null ? Map<String, dynamic>.from(result) : <String, dynamic>{};
+    } catch (e) {
+      // Method not implemented on this platform
+      return <String, dynamic>{};
+    }
+  }
+
+  @override
   Stream<VideoEvent> videoEventsFor(int? textureId) =>
       _eventChannelFor(textureId).receiveBroadcastStream().map((event) {
         late Map<dynamic, dynamic> map;
@@ -234,11 +281,28 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
 
             final Size size = Size(width, height);
 
+            // Extract HDR information if available
+            bool? isHdr;
+            String? hdrFormat;
+            String? colorSpace;
+            if (map.containsKey('isHdr')) {
+              isHdr = map['isHdr'] as bool?;
+            }
+            if (map.containsKey('hdrFormat')) {
+              hdrFormat = map['hdrFormat'] as String?;
+            }
+            if (map.containsKey('colorSpace')) {
+              colorSpace = map['colorSpace'] as String?;
+            }
+
             return VideoEvent(
               eventType: VideoEventType.initialized,
               key: key,
               duration: Duration(milliseconds: map['duration'] as int),
               size: size,
+              isHdr: isHdr,
+              hdrFormat: hdrFormat,
+              colorSpace: colorSpace,
             );
           case 'completed':
             return VideoEvent(eventType: VideoEventType.completed, key: key);

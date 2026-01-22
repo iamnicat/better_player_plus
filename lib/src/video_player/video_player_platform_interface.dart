@@ -161,6 +161,41 @@ abstract class VideoPlayerPlatform {
     throw UnimplementedError('clearCache() has not been implemented.');
   }
 
+  /// Checks if the device supports HDR playback.
+  ///
+  /// Returns true if the device supports HDR, false otherwise.
+  /// Only available on Android and iOS.
+  Future<bool> isHdrSupported() async {
+    throw UnimplementedError('isHdrSupported() has not been implemented.');
+  }
+
+  /// Gets the list of HDR formats supported by the device.
+  ///
+  /// Returns a list of HDR format strings (e.g., "HDR10", "HDR10+", "Dolby Vision").
+  /// Only available on Android and iOS.
+  Future<List<String>> getSupportedHdrFormats() async {
+    throw UnimplementedError('getSupportedHdrFormats() has not been implemented.');
+  }
+
+  /// Checks if the device supports wide color gamut.
+  ///
+  /// Returns true if the device supports wide color gamut, false otherwise.
+  /// Only available on Android and iOS.
+  Future<bool> isWideColorGamutSupported() async {
+    throw UnimplementedError('isWideColorGamutSupported() has not been implemented.');
+  }
+
+  /// Gets video metadata including HDR information for the given texture.
+  ///
+  /// Returns a map containing video metadata including:
+  /// - isHdr: bool indicating if the video is HDR
+  /// - hdrFormat: String indicating the HDR format (if HDR)
+  /// - colorSpace: String indicating the color space
+  /// Only available on Android and iOS.
+  Future<Map<String, dynamic>> getVideoMetadata(int? textureId) async {
+    throw UnimplementedError('getVideoMetadata() has not been implemented.');
+  }
+
   /// Returns a widget displaying the video with a given textureID.
   Widget buildView(int? textureId) {
     throw UnimplementedError('buildView() has not been implemented.');
@@ -373,6 +408,9 @@ class VideoEvent {
     this.size,
     this.buffered,
     this.position,
+    this.isHdr,
+    this.hdrFormat,
+    this.colorSpace,
   });
 
   /// The type of the event.
@@ -401,6 +439,21 @@ class VideoEvent {
   ///Seek position
   final Duration? position;
 
+  /// Whether the video is HDR.
+  ///
+  /// Only set when [eventType] is [VideoEventType.initialized].
+  final bool? isHdr;
+
+  /// HDR format of the video (e.g., "HDR10", "HDR10+", "Dolby Vision").
+  ///
+  /// Only set when [eventType] is [VideoEventType.initialized] and [isHdr] is true.
+  final String? hdrFormat;
+
+  /// Color space of the video (e.g., "BT2020", "P3").
+  ///
+  /// Only set when [eventType] is [VideoEventType.initialized].
+  final String? colorSpace;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -410,10 +463,13 @@ class VideoEvent {
           eventType == other.eventType &&
           duration == other.duration &&
           size == other.size &&
-          listEquals(buffered, other.buffered);
+          listEquals(buffered, other.buffered) &&
+          isHdr == other.isHdr &&
+          hdrFormat == other.hdrFormat &&
+          colorSpace == other.colorSpace;
 
   @override
-  int get hashCode => eventType.hashCode ^ duration.hashCode ^ size.hashCode ^ buffered.hashCode;
+  int get hashCode => eventType.hashCode ^ duration.hashCode ^ size.hashCode ^ buffered.hashCode ^ isHdr.hashCode ^ hdrFormat.hashCode ^ colorSpace.hashCode;
 }
 
 /// Type of the event.

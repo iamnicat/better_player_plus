@@ -43,6 +43,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import androidx.media3.datasource.DataSource
@@ -103,6 +104,7 @@ internal class BetterPlayer(
     private val customDefaultLoadControl: CustomDefaultLoadControl =
         customDefaultLoadControl ?: CustomDefaultLoadControl()
     private var lastSendBufferedPosition = 0L
+    private var hasAutoSelectedHdrTrack = false
 
     init {
         val loadBuilder = DefaultLoadControl.Builder()
@@ -119,6 +121,8 @@ internal class BetterPlayer(
             .build()
         workManager = WorkManager.getInstance(context)
         workerObserverMap = HashMap()
+        // Configure track selector to prefer HDR tracks when device supports HDR
+        configureHdrTrackSelection(context)
         setupVideoPlayer(eventChannel, textureEntry, result)
     }
 
@@ -141,6 +145,7 @@ internal class BetterPlayer(
     ) {
         this.key = key
         isInitialized = false
+        hasAutoSelectedHdrTrack = false // Reset for new video source
         val uri = dataSource?.toUri()
         var dataSourceFactory: DataSource.Factory?
         val userAgent = getUserAgent(headers)
@@ -451,6 +456,128 @@ internal class BetterPlayer(
         }
     }
 
+    /**
+     * Configures track selection to prefer HDR tracks when device supports HDR.
+     * This ensures that HDR content is automatically selected when available.
+     */
+    private fun configureHdrTrackSelection(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            return
+        }
+        
+        // Check if device supports HDR
+        val isHdrSupported = checkDeviceHdrSupport(context)
+        if (!isHdrSupported) {
+            return
+        }
+        
+        // Add listener to automatically select HDR tracks when they become available
+        exoPlayer?.addListener(object : Player.Listener {
+            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                // When tracks are available, try to select HDR tracks
+                selectHdrTrackIfAvailable()
+            }
+        })
+    }
+    
+    /**
+     * Checks if the device supports HDR playback.
+     */
+    private fun checkDeviceHdrSupport(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            return false
+        }
+        
+        return try {
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            val display = windowManager.defaultDisplay
+            val hdrCapabilities = display.hdrCapabilities
+            hdrCapabilities?.supportedHdrTypes?.isNotEmpty() == true
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking device HDR support", e)
+            false
+        }
+    }
+    
+    /**
+     * Automatically selects HDR video track if available and device supports HDR.
+     * Only selects once per video source to avoid interfering with manual selections.
+     */
+    private fun selectHdrTrackIfAvailable() {
+        // Only auto-select once per video source
+        if (hasAutoSelectedHdrTrack) {
+            return
+        }
+        
+        val mappedTrackInfo = trackSelector.currentMappedTrackInfo ?: return
+        
+        // Check if there are already manual track overrides - if so, don't auto-select
+        val currentParameters = trackSelector.parameters
+        if (currentParameters.trackSelectionOverrides.isNotEmpty()) {
+            // User has manually selected tracks, don't override
+            return
+        }
+        
+        // Find video renderer
+        for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+            if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_VIDEO) {
+                continue
+            }
+            
+            val trackGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
+            var bestHdrTrack: Pair<Int, Int>? = null
+            var bestHdrFormat: String? = null
+            var bestPriority = 0
+            
+            // Find the best HDR track
+            for (groupIndex in 0 until trackGroups.length) {
+                val group = trackGroups[groupIndex]
+                for (trackIndex in 0 until group.length) {
+                    val format = group.getFormat(trackIndex)
+                    val hdrInfo = detectHdrFormat(format)
+                    
+                    if (hdrInfo.isHdr && hdrInfo.hdrFormat != null) {
+                        // Prioritize: Dolby Vision > HDR10+ > HDR10 > HLG
+                        val priority = when (hdrInfo.hdrFormat) {
+                            "Dolby Vision" -> 4
+                            "HDR10+" -> 3
+                            "HDR10" -> 2
+                            "HLG" -> 1
+                            else -> 0
+                        }
+                        
+                        if (priority > bestPriority) {
+                            bestHdrTrack = Pair(groupIndex, trackIndex)
+                            bestHdrFormat = hdrInfo.hdrFormat
+                            bestPriority = priority
+                        }
+                    }
+                }
+            }
+            
+            // Select the best HDR track if found
+            bestHdrTrack?.let { (groupIndex, trackIndex) ->
+                try {
+                    val group = trackGroups[groupIndex]
+                    val builder = trackSelector.parameters
+                        .buildUpon()
+                        .setRendererDisabled(rendererIndex, false)
+                        .addOverride(
+                            TrackSelectionOverride(
+                                group,
+                                trackIndex
+                            )
+                        )
+                    trackSelector.setParameters(builder)
+                    hasAutoSelectedHdrTrack = true
+                    Log.d(TAG, "Auto-selected HDR track: $bestHdrFormat (group: $groupIndex, track: $trackIndex)")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to select HDR track", e)
+                }
+            }
+        }
+    }
+
     private fun setupVideoPlayer(
         eventChannel: EventChannel, textureEntry: SurfaceTextureEntry, result: MethodChannel.Result
     ) {
@@ -611,6 +738,21 @@ internal class BetterPlayer(
                     }
                     event["width"] = width
                     event["height"] = height
+                    
+                    // Add HDR information with improved detection
+                    val hdrInfo = detectHdrFormat(videoFormat)
+                    event["isHdr"] = hdrInfo.isHdr
+                    event["hdrFormat"] = hdrInfo.hdrFormat
+                    
+                    // Color space information
+                    val colorSpace = videoFormat.colorSpace
+                    val colorSpaceName = when (colorSpace) {
+                        C.COLOR_SPACE_BT709 -> "BT709"
+                        C.COLOR_SPACE_BT2020 -> "BT2020"
+                        C.COLOR_SPACE_BT601 -> "BT601"
+                        else -> "Unknown"
+                    }
+                    event["colorSpace"] = colorSpaceName
                 }
             }
             eventSink.success(event)
@@ -755,6 +897,148 @@ internal class BetterPlayer(
 
     fun setMixWithOthers(mixWithOthers: Boolean) {
         setAudioAttributes(exoPlayer, mixWithOthers)
+    }
+
+    /**
+     * Detects HDR format from video format information.
+     * Uses multiple indicators: codec, color transfer, color space, and pixel format.
+     */
+    private fun detectHdrFormat(videoFormat: androidx.media3.common.Format): HdrInfo {
+        val colorSpace = videoFormat.colorSpace
+        val colorTransfer = videoFormat.colorTransfer
+        val codecs = videoFormat.codecs
+        
+        // Primary detection: Check color transfer characteristics
+        val isHdrByTransfer = colorTransfer == C.COLOR_TRANSFER_HLG ||
+                colorTransfer == C.COLOR_TRANSFER_ST2084
+        
+        // Secondary detection: Check color space (BT2020 is typically used for HDR)
+        val isHdrByColorSpace = colorSpace == C.COLOR_SPACE_BT2020
+        
+        // Tertiary detection: Check codec for HDR indicators
+        var isHdrByCodec = false
+        var detectedHdrFormat: String? = null
+        
+        if (codecs != null) {
+            val codecsLower = codecs.lowercase()
+            
+            // Dolby Vision detection (highest priority)
+            if (codecsLower.contains("dvhe") || codecsLower.contains("dvh1") ||
+                codecsLower.contains("dvav") || codecsLower.contains("dva1")) {
+                isHdrByCodec = true
+                detectedHdrFormat = "Dolby Vision"
+            }
+            // HDR10+ detection
+            else if (codecsLower.contains("hdr10+") || codecsLower.contains("hdr10plus")) {
+                isHdrByCodec = true
+                detectedHdrFormat = "HDR10+"
+            }
+            // HDR10 detection (HEVC Main 10 Profile)
+            else if (codecsLower.contains("hev1") || codecsLower.contains("hvc1")) {
+                // Check if it's Main 10 profile (HDR10 capable)
+                if (codecsLower.contains("main10") || codecsLower.contains("main-10")) {
+                    isHdrByCodec = true
+                    if (detectedHdrFormat == null) {
+                        detectedHdrFormat = "HDR10"
+                    }
+                }
+            }
+            // VP9 HDR detection
+            else if (codecsLower.contains("vp9") || codecsLower.contains("vp09")) {
+                // VP9 Profile 2 or 3 typically indicates HDR
+                if (codecsLower.contains("profile2") || codecsLower.contains("profile3")) {
+                    isHdrByCodec = true
+                    // VP9 Profile 2 is typically HLG, Profile 3 can be HDR10
+                    if (detectedHdrFormat == null) {
+                        detectedHdrFormat = if (colorTransfer == C.COLOR_TRANSFER_HLG) "HLG" else "HDR10"
+                    }
+                }
+            }
+        }
+        
+        val isHdr = isHdrByTransfer || isHdrByColorSpace || isHdrByCodec
+        
+        if (!isHdr) {
+            return HdrInfo(false, null)
+        }
+        
+        // Determine specific HDR format
+        val hdrFormat = when {
+            // Dolby Vision has highest priority
+            detectedHdrFormat == "Dolby Vision" -> "Dolby Vision"
+            
+            // HDR10+ detection
+            detectedHdrFormat == "HDR10+" -> "HDR10+"
+            colorTransfer == C.COLOR_TRANSFER_ST2084 && 
+                (codecs?.lowercase()?.contains("hdr10+") == true || 
+                 codecs?.lowercase()?.contains("hdr10plus") == true) -> "HDR10+"
+            
+            // HLG detection
+            colorTransfer == C.COLOR_TRANSFER_HLG -> "HLG"
+            detectedHdrFormat == "HLG" -> "HLG"
+            
+            // HDR10 detection (ST-2084 transfer function)
+            colorTransfer == C.COLOR_TRANSFER_ST2084 -> {
+                // Check codec to distinguish HDR10 from Dolby Vision
+                if (codecs != null && (codecs.lowercase().contains("dvhe") || 
+                    codecs.lowercase().contains("dvh1") ||
+                    codecs.lowercase().contains("dvav") || 
+                    codecs.lowercase().contains("dva1"))) {
+                    "Dolby Vision"
+                } else {
+                    "HDR10"
+                }
+            }
+            
+            // BT2020 color space with HDR-capable codec
+            colorSpace == C.COLOR_SPACE_BT2020 && isHdrByCodec -> {
+                detectedHdrFormat ?: "HDR10"
+            }
+            
+            // Fallback to generic HDR
+            else -> detectedHdrFormat ?: "HDR"
+        }
+        
+        return HdrInfo(true, hdrFormat)
+    }
+    
+    /**
+     * Data class to hold HDR detection results.
+     */
+    private data class HdrInfo(
+        val isHdr: Boolean,
+        val hdrFormat: String?
+    )
+
+    fun getVideoMetadata(): Map<String, Any?> {
+        val metadata = mutableMapOf<String, Any?>()
+        exoPlayer?.let { player ->
+            player.videoFormat?.let { videoFormat ->
+                // Check if video is HDR with improved detection
+                val hdrInfo = detectHdrFormat(videoFormat)
+                metadata["isHdr"] = hdrInfo.isHdr
+                metadata["hdrFormat"] = hdrInfo.hdrFormat
+                
+                // Color space information
+                val colorSpace = videoFormat.colorSpace
+                val colorSpaceName = when (colorSpace) {
+                    C.COLOR_SPACE_BT709 -> "BT709"
+                    C.COLOR_SPACE_BT2020 -> "BT2020"
+                    C.COLOR_SPACE_BT601 -> "BT601"
+                    else -> "Unknown"
+                }
+                metadata["colorSpace"] = colorSpaceName
+            } ?: run {
+                metadata["isHdr"] = false
+                metadata["hdrFormat"] = null
+                metadata["colorSpace"] = null
+            }
+        } ?: run {
+            metadata["isHdr"] = false
+            metadata["hdrFormat"] = null
+            metadata["colorSpace"] = null
+        }
+        return metadata
     }
 
     fun dispose() {

@@ -7,12 +7,15 @@ import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.util.LongSparseArray
 import android.util.Rational
+import android.view.Display
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import uz.shs.better_player_plus.BetterPlayerCache.releaseCache
@@ -246,6 +249,22 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
                 if (mixWitOthers != null) {
                     player.setMixWithOthers(mixWitOthers)
                 }
+            }
+
+            IS_HDR_SUPPORTED_METHOD -> {
+                result.success(isHdrSupported())
+            }
+
+            GET_SUPPORTED_HDR_FORMATS_METHOD -> {
+                result.success(getSupportedHdrFormats())
+            }
+
+            IS_WIDE_COLOR_GAMUT_SUPPORTED_METHOD -> {
+                result.success(isWideColorGamutSupported())
+            }
+
+            GET_VIDEO_METADATA_METHOD -> {
+                result.success(player.getVideoMetadata())
             }
 
             DISPOSE_METHOD -> {
@@ -586,5 +605,198 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
         private const val DISPOSE_METHOD = "dispose"
         private const val PRE_CACHE_METHOD = "preCache"
         private const val STOP_PRE_CACHE_METHOD = "stopPreCache"
+        private const val IS_HDR_SUPPORTED_METHOD = "isHdrSupported"
+        private const val GET_SUPPORTED_HDR_FORMATS_METHOD = "getSupportedHdrFormats"
+        private const val IS_WIDE_COLOR_GAMUT_SUPPORTED_METHOD = "isWideColorGamutSupported"
+        private const val GET_VIDEO_METADATA_METHOD = "getVideoMetadata"
+    }
+
+    private fun isHdrSupported(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            activity?.let { act ->
+                val display = act.windowManager.defaultDisplay
+                val hdrCapabilities = display.hdrCapabilities
+                val hasDisplayHdrSupport = hdrCapabilities?.supportedHdrTypes?.isNotEmpty() == true
+                
+                // Also check if device has HDR codec support
+                val hasCodecHdrSupport = checkCodecHdrSupport()
+                
+                // Device supports HDR if both display and codec support it
+                hasDisplayHdrSupport && hasCodecHdrSupport
+            } ?: false
+        } else {
+            false
+        }
+    }
+    
+    /**
+     * Check if device has codec support for HDR formats.
+     * This verifies that the device can actually decode HDR content.
+     */
+    private fun checkCodecHdrSupport(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return false
+        }
+        
+        try {
+            val codecList = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+            val codecInfos = codecList.codecInfos
+            
+            for (codecInfo in codecInfos) {
+                if (codecInfo.isEncoder) continue
+                
+                val supportedTypes = codecInfo.supportedTypes
+                for (mimeType in supportedTypes) {
+                    // Check for HDR-capable codecs
+                    if (mimeType.startsWith("video/hevc") || 
+                        mimeType.startsWith("video/avc") ||
+                        mimeType.startsWith("video/vp9")) {
+                        
+                        try {
+                            val codecCapabilities = codecInfo.getCapabilitiesForType(mimeType)
+                            val profileLevels = codecCapabilities.profileLevels
+                            
+                            // Check for HDR profiles
+                            for (profileLevel in profileLevels) {
+                                val profile = profileLevel.profile
+                                // HEVC Main 10 Profile (HDR10)
+                                if (mimeType.startsWith("video/hevc") && 
+                                    (profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10 ||
+                                     profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10 ||
+                                     profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus)) {
+                                    return true
+                                }
+                                // AVC High 10 Profile (for Dolby Vision)
+                                if (mimeType.startsWith("video/avc") &&
+                                    profile == MediaCodecInfo.CodecProfileLevel.AVCProfileHigh10) {
+                                    return true
+                                }
+                                // VP9 Profile 2 (HDR)
+                                if (mimeType.startsWith("video/vp9") &&
+                                    (profile == MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR ||
+                                     profile == MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR10Plus)) {
+                                    return true
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Continue checking other codecs
+                            continue
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking codec HDR support", e)
+        }
+        
+        return false
+    }
+
+    private fun getSupportedHdrFormats(): List<String> {
+        val formats = mutableSetOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            activity?.let { act ->
+                val display = act.windowManager.defaultDisplay
+                val hdrCapabilities = display.hdrCapabilities
+                hdrCapabilities?.supportedHdrTypes?.forEach { hdrType ->
+                    when (hdrType) {
+                        Display.HdrCapabilities.HDR_TYPE_HDR10 -> formats.add("HDR10")
+                        Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS -> formats.add("HDR10+")
+                        Display.HdrCapabilities.HDR_TYPE_HLG -> formats.add("HLG")
+                        Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION -> formats.add("Dolby Vision")
+                    }
+                }
+                
+                // Also check codec support for additional HDR formats
+                val codecHdrFormats = getCodecSupportedHdrFormats()
+                formats.addAll(codecHdrFormats)
+            }
+        }
+        return formats.toList()
+    }
+    
+    /**
+     * Get HDR formats supported by device codecs.
+     * This provides additional HDR format detection beyond display capabilities.
+     */
+    private fun getCodecSupportedHdrFormats(): List<String> {
+        val formats = mutableSetOf<String>()
+        
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return formats.toList()
+        }
+        
+        try {
+            val codecList = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+            val codecInfos = codecList.codecInfos
+            
+            for (codecInfo in codecInfos) {
+                if (codecInfo.isEncoder) continue
+                
+                val supportedTypes = codecInfo.supportedTypes
+                for (mimeType in supportedTypes) {
+                    try {
+                        val codecCapabilities = codecInfo.getCapabilitiesForType(mimeType)
+                        val profileLevels = codecCapabilities.profileLevels
+                        
+                        for (profileLevel in profileLevels) {
+                            val profile = profileLevel.profile
+                            
+                            // HEVC HDR profiles
+                            if (mimeType.startsWith("video/hevc")) {
+                                when (profile) {
+                                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10 -> {
+                                        formats.add("HDR10")
+                                    }
+                                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus -> {
+                                        formats.add("HDR10+")
+                                    }
+                                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10 -> {
+                                        // Main 10 profile can support HDR10
+                                        formats.add("HDR10")
+                                    }
+                                }
+                            }
+                            
+                            // VP9 HDR profiles
+                            if (mimeType.startsWith("video/vp9")) {
+                                when (profile) {
+                                    MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR -> {
+                                        formats.add("HLG")
+                                    }
+                                    MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR10Plus -> {
+                                        formats.add("HDR10+")
+                                    }
+                                }
+                            }
+                            
+                            // AVC High 10 (used for Dolby Vision)
+                            if (mimeType.startsWith("video/avc") &&
+                                profile == MediaCodecInfo.CodecProfileLevel.AVCProfileHigh10) {
+                                // Check if Dolby Vision is supported via display
+                                // Codec alone doesn't indicate Dolby Vision, but High 10 is required
+                            }
+                        }
+                    } catch (e: Exception) {
+                        continue
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error getting codec HDR formats", e)
+        }
+        
+        return formats.toList()
+    }
+
+    private fun isWideColorGamutSupported(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            activity?.let { act ->
+                val display = act.windowManager.defaultDisplay
+                display.isWideColorGamut
+            } ?: false
+        } else {
+            false
+        }
     }
 }

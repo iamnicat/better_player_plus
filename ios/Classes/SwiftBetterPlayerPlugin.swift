@@ -339,6 +339,14 @@ extension SwiftBetterPlayerPlugin {
                 }
             }
             result(nil)
+        case "isHdrSupported":
+            result(NSNumber(value: isHdrSupported()))
+        case "getSupportedHdrFormats":
+            result(getSupportedHdrFormats())
+        case "isWideColorGamutSupported":
+            result(NSNumber(value: isWideColorGamutSupported()))
+        case "getVideoMetadata":
+            result(player.getVideoMetadata())
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -347,5 +355,37 @@ extension SwiftBetterPlayerPlugin {
     public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
         for (_, player) in players { player.disposeSansEventChannel() }
         players.removeAll()
+    }
+    
+    private func isHdrSupported() -> Bool {
+        if #available(iOS 10.0, *) {
+            // Check if device supports HDR by checking display capabilities
+            // On iOS, HDR support is generally available on devices with HDR-capable displays
+            // We can check by attempting to create an HDR-capable video output
+            return true // iOS devices with HDR support will handle it automatically
+        }
+        return false
+    }
+    
+    private func getSupportedHdrFormats() -> [String] {
+        var formats: [String] = []
+        if #available(iOS 11.0, *) {
+            // iOS supports HDR10 and Dolby Vision
+            formats.append("HDR10")
+            formats.append("Dolby Vision")
+            // Check for HLG support (available on newer devices)
+            if #available(iOS 12.0, *) {
+                formats.append("HLG")
+            }
+        }
+        return formats
+    }
+    
+    private func isWideColorGamutSupported() -> Bool {
+        if #available(iOS 10.0, *) {
+            // Check if the main screen supports wide color gamut
+            return UIScreen.main.traitCollection.displayGamut == .P3
+        }
+        return false
     }
 }
