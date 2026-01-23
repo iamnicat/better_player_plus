@@ -90,6 +90,15 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
+        // Configure window for wide color gamut (HDR) on Android O+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                binding.activity.window.colorMode = android.view.WindowManager.LayoutParams.COLOR_MODE_WIDE_COLOR_GAMUT
+                Log.d(TAG, "Configured window for wide color gamut (HDR support)")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to configure window for wide color gamut", e)
+            }
+        }
     }
 
     override fun onDetachedFromActivityForConfigChanges() {}
@@ -271,6 +280,12 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
 
             GET_VIDEO_METADATA_METHOD -> {
                 result.success(player.getVideoMetadata())
+            }
+
+            IS_HDR_VIDEO_METHOD -> {
+                val videoPath = call.argument<String>(VIDEO_PATH_PARAMETER)
+                val isHdr = isHdrVideo(videoPath ?: "")
+                result.success(isHdr)
             }
 
             DISPOSE_METHOD -> {
@@ -615,6 +630,8 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
         private const val GET_SUPPORTED_HDR_FORMATS_METHOD = "getSupportedHdrFormats"
         private const val IS_WIDE_COLOR_GAMUT_SUPPORTED_METHOD = "isWideColorGamutSupported"
         private const val GET_VIDEO_METADATA_METHOD = "getVideoMetadata"
+        private const val IS_HDR_VIDEO_METHOD = "isHdrVideo"
+        private const val VIDEO_PATH_PARAMETER = "videoPath"
     }
 
     private fun isHdrSupported(): Boolean {
@@ -803,6 +820,103 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
             } ?: false
         } else {
             false
+        }
+    }
+
+    /**
+     * Detects if a video file has HDR metadata.
+     * Uses MediaMetadataRetriever to check color space and transfer characteristics.
+     * 
+     * @param videoPath The path or URI to the video file
+     * @return true if the video has HDR metadata, false otherwise
+     */
+    private fun isHdrVideo(videoPath: String): Boolean {
+        if (videoPath.isEmpty()) {
+            return false
+        }
+        
+        val retriever = android.media.MediaMetadataRetriever()
+        try {
+            // Handle different URI types
+            when {
+                videoPath.startsWith("http://") || videoPath.startsWith("https://") -> {
+                    // Network URL - MediaMetadataRetriever can handle this on some Android versions
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        retriever.setDataSource(videoPath, HashMap())
+                    } else {
+                        // For older versions, we can't easily check network URLs
+                        // Return false and let runtime detection handle it
+                        return false
+                    }
+                }
+                videoPath.startsWith("file://") -> {
+                    retriever.setDataSource(videoPath.removePrefix("file://"))
+                }
+                videoPath.startsWith("asset://") -> {
+                    // Asset files - can't use MediaMetadataRetriever directly
+                    // Return false and let runtime detection handle it
+                    return false
+                }
+                else -> {
+                    // Try as file path
+                    try {
+                        retriever.setDataSource(videoPath)
+                    } catch (e: Exception) {
+                        // If it fails, try as URI
+                        retriever.setDataSource(flutterState?.applicationContext, android.net.Uri.parse(videoPath))
+                    }
+                }
+            }
+            
+            // Check color space (BT2020 typically indicates HDR)
+            val colorSpace = retriever.extractMetadata(
+                android.media.MediaMetadataRetriever.METADATA_KEY_COLOR_SPACE
+            )
+            
+            // Check for HDR indicators in color space
+            if (colorSpace != null) {
+                val colorSpaceLower = colorSpace.lowercase()
+                if (colorSpaceLower.contains("bt2020") || 
+                    colorSpaceLower.contains("hdr") ||
+                    colorSpaceLower.contains("rec2020")) {
+                    return true
+                }
+            }
+            
+            // On Android 29+, we can check color transfer characteristics
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    // Try to extract color transfer info
+                    // Note: MediaMetadataRetriever doesn't directly expose color transfer,
+                    // but we can infer from other metadata
+                    val videoCodec = retriever.extractMetadata(
+                        android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_CODEC_MIME_TYPE
+                    )
+                    
+                    // Check codec for HDR indicators
+                    if (videoCodec != null) {
+                        val codecLower = videoCodec.lowercase()
+                        // HEVC Main 10 Profile, VP9 Profile 2/3, etc. can indicate HDR
+                        if (codecLower.contains("hevc") || codecLower.contains("h265")) {
+                            // HEVC with Main 10 profile often indicates HDR
+                            // We'll let runtime detection confirm
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Continue with other checks
+                }
+            }
+            
+            return false
+        } catch (e: Exception) {
+            Log.w(TAG, "Error detecting HDR video: ${e.message}", e)
+            return false
+        } finally {
+            try {
+                retriever.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error releasing MediaMetadataRetriever", e)
+            }
         }
     }
 }

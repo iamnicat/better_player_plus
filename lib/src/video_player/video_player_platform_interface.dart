@@ -196,6 +196,17 @@ abstract class VideoPlayerPlatform {
     throw UnimplementedError('getVideoMetadata() has not been implemented.');
   }
 
+  /// Detects if a video file has HDR metadata.
+  ///
+  /// Checks the video file at [videoPath] for HDR metadata using platform-specific
+  /// methods. Returns true if the video has HDR metadata, false otherwise.
+  /// 
+  /// This method can be used to automatically enable HDR mode before playing a video.
+  /// Only available on Android. On other platforms, returns false.
+  Future<bool> isHdrVideo(String videoPath) async {
+    throw UnimplementedError('isHdrVideo() has not been implemented.');
+  }
+
   /// Returns a widget displaying the video with a given textureID.
   ///
   /// If [enableHdr] is true, uses platform views with SurfaceView for HDR

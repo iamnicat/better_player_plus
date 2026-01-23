@@ -234,9 +234,33 @@ class BetterPlayerController {
 
     ///Build videoPlayerController if null
     if (videoPlayerController == null) {
+      // Auto-detect HDR if not explicitly set and on Android
+      bool shouldEnableHdr = betterPlayerConfiguration.enableHdr;
+      if (!shouldEnableHdr && Platform.isAndroid) {
+        // Try to detect HDR from video URL/path
+        try {
+          final videoPath = betterPlayerDataSource.url;
+          if (videoPath.isNotEmpty) {
+            final videoPlayerPlatform = VideoPlayerPlatform.instance;
+            final isHdr = await videoPlayerPlatform.isHdrVideo(videoPath);
+            if (isHdr) {
+              // Check if device supports HDR
+              final deviceSupportsHdr = await videoPlayerPlatform.isHdrSupported();
+              if (deviceSupportsHdr) {
+                shouldEnableHdr = true;
+                BetterPlayerUtils.log('Auto-detected HDR video, enabling HDR mode');
+              }
+            }
+          }
+        } catch (e) {
+          BetterPlayerUtils.log('Error detecting HDR: $e');
+          // Continue with original enableHdr value
+        }
+      }
+      
       videoPlayerController = VideoPlayerController(
         bufferingConfiguration: betterPlayerDataSource.bufferingConfiguration,
-        enableHdr: betterPlayerConfiguration.enableHdr,
+        enableHdr: shouldEnableHdr,
       );
       videoPlayerController?.addListener(_onVideoPlayerChanged);
     }

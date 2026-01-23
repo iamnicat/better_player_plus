@@ -253,6 +253,20 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
   }
 
   @override
+  Future<bool> isHdrVideo(String videoPath) async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>(
+        'isHdrVideo',
+        <String, dynamic>{'videoPath': videoPath},
+      );
+      return result ?? false;
+    } catch (e) {
+      // Method not implemented on this platform or error occurred
+      return false;
+    }
+  }
+
+  @override
   Stream<VideoEvent> videoEventsFor(int? textureId) =>
       _eventChannelFor(textureId).receiveBroadcastStream().map((event) {
         late Map<dynamic, dynamic> map;
