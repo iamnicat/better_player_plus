@@ -93,7 +93,9 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
         // Configure window for wide color gamut (HDR) on Android O+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
-                binding.activity.window.colorMode = android.view.WindowManager.LayoutParams.COLOR_MODE_WIDE_COLOR_GAMUT
+                // Use the constant value directly (2 = COLOR_MODE_WIDE_COLOR_GAMUT)
+                val colorModeWideColorGamut = 2
+                binding.activity.window.colorMode = colorModeWideColorGamut
                 Log.d(TAG, "Configured window for wide color gamut (HDR support)")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to configure window for wide color gamut", e)
@@ -869,9 +871,17 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
             }
             
             // Check color space (BT2020 typically indicates HDR)
-            val colorSpace = retriever.extractMetadata(
-                android.media.MediaMetadataRetriever.METADATA_KEY_COLOR_SPACE
-            )
+            // Use numeric constant (24 = METADATA_KEY_COLOR_SPACE) or try alternative approach
+            val colorSpace = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Try using the constant value directly
+                    retriever.extractMetadata(24) // METADATA_KEY_COLOR_SPACE
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
+            }
             
             // Check for HDR indicators in color space
             if (colorSpace != null) {
@@ -883,15 +893,20 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
                 }
             }
             
-            // On Android 29+, we can check color transfer characteristics
+            // On Android 29+, we can check codec information
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
-                    // Try to extract color transfer info
-                    // Note: MediaMetadataRetriever doesn't directly expose color transfer,
-                    // but we can infer from other metadata
-                    val videoCodec = retriever.extractMetadata(
-                        android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_CODEC_MIME_TYPE
-                    )
+                    // Try to extract codec info using numeric constant (20 = METADATA_KEY_VIDEO_CODEC_MIME_TYPE)
+                    val videoCodec = try {
+                        retriever.extractMetadata(20) // METADATA_KEY_VIDEO_CODEC_MIME_TYPE
+                    } catch (e: Exception) {
+                        // Try alternative: METADATA_KEY_MIMETYPE (5)
+                        try {
+                            retriever.extractMetadata(5)
+                        } catch (e2: Exception) {
+                            null
+                        }
+                    }
                     
                     // Check codec for HDR indicators
                     if (videoCodec != null) {

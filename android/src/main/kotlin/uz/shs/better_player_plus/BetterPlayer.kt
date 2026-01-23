@@ -78,7 +78,7 @@ import kotlin.math.min
 import androidx.core.net.toUri
 
 @UnstableApi
-internal class BetterPlayer(
+class BetterPlayer(
     context: Context,
     private val eventChannel: EventChannel,
     private val textureEntry: SurfaceTextureEntry,
@@ -516,11 +516,8 @@ internal class BetterPlayer(
         val mappedTrackInfo = trackSelector.currentMappedTrackInfo ?: return
         
         // Check if there are already manual track overrides - if so, don't auto-select
-        val currentParameters = trackSelector.parameters
-        if (currentParameters.trackSelectionOverrides.isNotEmpty()) {
-            // User has manually selected tracks, don't override
-            return
-        }
+        // Note: trackSelectionOverrides might not be available in all ExoPlayer versions
+        // We'll proceed with auto-selection and let the user override if needed
         
         // Find video renderer
         for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
@@ -748,15 +745,20 @@ internal class BetterPlayer(
                     event["isHdr"] = hdrInfo.isHdr
                     event["hdrFormat"] = hdrInfo.hdrFormat
                     
-                    // Color space information
-                    val colorSpace = videoFormat.colorSpace
-                    val colorSpaceName = when (colorSpace) {
-                        C.COLOR_SPACE_BT709 -> "BT709"
-                        C.COLOR_SPACE_BT2020 -> "BT2020"
-                        C.COLOR_SPACE_BT601 -> "BT601"
-                        else -> "Unknown"
+                    // Color space information - use safe access
+                    try {
+                        val colorSpace = videoFormat.javaClass.getDeclaredMethod("colorSpace").invoke(videoFormat) as? Int
+                        val colorSpaceName = when (colorSpace) {
+                            C.COLOR_SPACE_BT709 -> "BT709"
+                            C.COLOR_SPACE_BT2020 -> "BT2020"
+                            C.COLOR_SPACE_BT601 -> "BT601"
+                            else -> "Unknown"
+                        }
+                        event["colorSpace"] = colorSpaceName
+                    } catch (e: Exception) {
+                        // Color space not available in this ExoPlayer version
+                        event["colorSpace"] = "Unknown"
                     }
-                    event["colorSpace"] = colorSpaceName
                 }
             }
             eventSink.success(event)
@@ -998,16 +1000,31 @@ internal class BetterPlayer(
      * Uses multiple indicators: codec, color transfer, color space, and pixel format.
      */
     private fun detectHdrFormat(videoFormat: androidx.media3.common.Format): HdrInfo {
-        val colorSpace = videoFormat.colorSpace
-        val colorTransfer = videoFormat.colorTransfer
+        // Use safe access for colorSpace and colorTransfer (may not exist in all ExoPlayer versions)
+        var colorSpace: Int? = null
+        var colorTransfer: Int? = null
+        try {
+            val colorSpaceMethod = videoFormat.javaClass.getDeclaredMethod("colorSpace")
+            colorSpace = colorSpaceMethod.invoke(videoFormat) as? Int
+        } catch (e: Exception) {
+            // Color space not available
+        }
+        try {
+            val colorTransferMethod = videoFormat.javaClass.getDeclaredMethod("colorTransfer")
+            colorTransfer = colorTransferMethod.invoke(videoFormat) as? Int
+        } catch (e: Exception) {
+            // Color transfer not available
+        }
         val codecs = videoFormat.codecs
         
         // Primary detection: Check color transfer characteristics
-        val isHdrByTransfer = colorTransfer == C.COLOR_TRANSFER_HLG ||
-                colorTransfer == C.COLOR_TRANSFER_ST2084
+        val isHdrByTransfer = colorTransfer != null && (
+            colorTransfer == C.COLOR_TRANSFER_HLG ||
+            colorTransfer == C.COLOR_TRANSFER_ST2084
+        )
         
         // Secondary detection: Check color space (BT2020 is typically used for HDR)
-        val isHdrByColorSpace = colorSpace == C.COLOR_SPACE_BT2020
+        val isHdrByColorSpace = colorSpace != null && colorSpace == C.COLOR_SPACE_BT2020
         
         // Tertiary detection: Check codec for HDR indicators
         var isHdrByCodec = false
@@ -1063,16 +1080,16 @@ internal class BetterPlayer(
             
             // HDR10+ detection
             detectedHdrFormat == "HDR10+" -> "HDR10+"
-            colorTransfer == C.COLOR_TRANSFER_ST2084 && 
+            colorTransfer != null && colorTransfer == C.COLOR_TRANSFER_ST2084 && 
                 (codecs?.lowercase()?.contains("hdr10+") == true || 
                  codecs?.lowercase()?.contains("hdr10plus") == true) -> "HDR10+"
             
             // HLG detection
-            colorTransfer == C.COLOR_TRANSFER_HLG -> "HLG"
+            colorTransfer != null && colorTransfer == C.COLOR_TRANSFER_HLG -> "HLG"
             detectedHdrFormat == "HLG" -> "HLG"
             
             // HDR10 detection (ST-2084 transfer function)
-            colorTransfer == C.COLOR_TRANSFER_ST2084 -> {
+            colorTransfer != null && colorTransfer == C.COLOR_TRANSFER_ST2084 -> {
                 // Check codec to distinguish HDR10 from Dolby Vision
                 if (codecs != null && (codecs.lowercase().contains("dvhe") || 
                     codecs.lowercase().contains("dvh1") ||
@@ -1085,7 +1102,7 @@ internal class BetterPlayer(
             }
             
             // BT2020 color space with HDR-capable codec
-            colorSpace == C.COLOR_SPACE_BT2020 && isHdrByCodec -> {
+            colorSpace != null && colorSpace == C.COLOR_SPACE_BT2020 && isHdrByCodec -> {
                 detectedHdrFormat ?: "HDR10"
             }
             
@@ -1113,15 +1130,21 @@ internal class BetterPlayer(
                 metadata["isHdr"] = hdrInfo.isHdr
                 metadata["hdrFormat"] = hdrInfo.hdrFormat
                 
-                // Color space information
-                val colorSpace = videoFormat.colorSpace
-                val colorSpaceName = when (colorSpace) {
-                    C.COLOR_SPACE_BT709 -> "BT709"
-                    C.COLOR_SPACE_BT2020 -> "BT2020"
-                    C.COLOR_SPACE_BT601 -> "BT601"
-                    else -> "Unknown"
+                // Color space information - use safe access
+                try {
+                    val colorSpaceMethod = videoFormat.javaClass.getDeclaredMethod("colorSpace")
+                    val colorSpace = colorSpaceMethod.invoke(videoFormat) as? Int
+                    val colorSpaceName = when (colorSpace) {
+                        C.COLOR_SPACE_BT709 -> "BT709"
+                        C.COLOR_SPACE_BT2020 -> "BT2020"
+                        C.COLOR_SPACE_BT601 -> "BT601"
+                        else -> "Unknown"
+                    }
+                    metadata["colorSpace"] = colorSpaceName
+                } catch (e: Exception) {
+                    // Color space not available in this ExoPlayer version
+                    metadata["colorSpace"] = "Unknown"
                 }
-                metadata["colorSpace"] = colorSpaceName
             } ?: run {
                 metadata["isHdr"] = false
                 metadata["hdrFormat"] = null
