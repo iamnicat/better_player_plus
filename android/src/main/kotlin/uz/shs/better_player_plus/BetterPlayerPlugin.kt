@@ -39,7 +39,7 @@ import androidx.core.util.size
  */
 @OptIn(UnstableApi::class)
 class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
-    private val videoPlayers = LongSparseArray<BetterPlayer>()
+    private val playerRegistry = BetterPlayerRegistry()
     private val dataSources = LongSparseArray<Map<String, Any?>>()
     private var flutterState: FlutterState? = null
     private var currentNotificationTextureId: Long = -1
@@ -68,6 +68,12 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
             binding.textureRegistry
         )
         flutterState?.startListening(this)
+        
+        // Register platform view factory for HDR playback
+        binding.platformViewRegistry.registerViewFactory(
+            "better_player_plus/hdr_player_view",
+            BetterPlayerPlatformViewFactory(playerRegistry)
+        )
     }
 
 
@@ -94,10 +100,10 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
 
     @UnstableApi
     private fun disposeAllPlayers() {
-        for (i in 0 until videoPlayers.size) {
-            videoPlayers.valueAt(i).dispose()
+        for (i in 0 until playerRegistry.size) {
+            playerRegistry.valueAt(i).dispose()
         }
-        videoPlayers.clear()
+        playerRegistry.clear()
         dataSources.clear()
     }
 
@@ -130,7 +136,7 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
                     flutterState?.applicationContext!!, eventChannel, handle,
                     customDefaultLoadControl, result
                 )
-                videoPlayers.put(handle.id(), player)
+                playerRegistry.registerPlayer(handle.id(), player)
             }
 
             PRE_CACHE_METHOD -> preCache(call, result)
@@ -146,7 +152,7 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
                     return
                 }
                 val textureId = ((call.argument<Any>(TEXTURE_ID_PARAMETER) as Int?) ?: 0).toLong()
-                val player = videoPlayers[textureId]
+                val player = playerRegistry.getPlayer(textureId)
                 if (player == null) {
                     result.error(
                         "Unknown textureId",
@@ -401,9 +407,9 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
 
     @OptIn(UnstableApi::class)
     private fun getTextureId(betterPlayer: BetterPlayer): Long? {
-        for (index in 0 until videoPlayers.size) {
-            if (betterPlayer === videoPlayers.valueAt(index)) {
-                return videoPlayers.keyAt(index)
+        for (index in 0 until playerRegistry.size) {
+            if (betterPlayer === playerRegistry.valueAt(index)) {
+                return playerRegistry.keyAt(index)
             }
         }
         return null
@@ -444,8 +450,8 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
 
     @OptIn(UnstableApi::class)
     private fun removeOtherNotificationListeners() {
-        for (index in 0 until videoPlayers.size) {
-            videoPlayers.valueAt(index).disposeRemoteNotifications()
+        for (index in 0 until playerRegistry.size) {
+            playerRegistry.valueAt(index).disposeRemoteNotifications()
         }
     }
 
@@ -500,7 +506,7 @@ class BetterPlayerPlugin : FlutterPlugin, ActivityAware, MethodCallHandler {
 
     private fun dispose(player: BetterPlayer, textureId: Long) {
         player.dispose()
-        videoPlayers.remove(textureId)
+        playerRegistry.unregisterPlayer(textureId)
         dataSources.remove(textureId)
         stopPipHandler()
     }

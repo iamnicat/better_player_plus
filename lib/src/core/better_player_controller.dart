@@ -236,6 +236,7 @@ class BetterPlayerController {
     if (videoPlayerController == null) {
       videoPlayerController = VideoPlayerController(
         bufferingConfiguration: betterPlayerDataSource.bufferingConfiguration,
+        enableHdr: betterPlayerConfiguration.enableHdr,
       );
       videoPlayerController?.addListener(_onVideoPlayerChanged);
     }

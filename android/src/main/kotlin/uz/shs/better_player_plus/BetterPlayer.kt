@@ -105,6 +105,10 @@ internal class BetterPlayer(
         customDefaultLoadControl ?: CustomDefaultLoadControl()
     private var lastSendBufferedPosition = 0L
     private var hasAutoSelectedHdrTrack = false
+    
+    // HDR platform view support
+    private var hdrSurfaceView: android.view.SurfaceView? = null
+    private var isUsingHdrSurface = false
 
     init {
         val loadBuilder = DefaultLoadControl.Builder()
@@ -897,6 +901,62 @@ internal class BetterPlayer(
 
     fun setMixWithOthers(mixWithOthers: Boolean) {
         setAudioAttributes(exoPlayer, mixWithOthers)
+    }
+
+    /**
+     * Sets an HDR-capable SurfaceView for video output.
+     * When set, video will be rendered through this SurfaceView, which
+     * supports HDR output unlike TextureView.
+     */
+    fun setHdrSurface(surfaceView: android.view.SurfaceView) {
+        hdrSurfaceView = surfaceView
+        
+        // Add callback to attach surface when it's ready
+        surfaceView.holder.addCallback(object : android.view.SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+                if (hdrSurfaceView == surfaceView) {
+                    exoPlayer?.setVideoSurface(holder.surface)
+                    isUsingHdrSurface = true
+                    Log.d(TAG, "HDR surface attached to player")
+                }
+            }
+
+            override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {
+                // Surface changed, typically on resize
+            }
+
+            override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+                if (hdrSurfaceView == surfaceView && isUsingHdrSurface) {
+                    exoPlayer?.clearVideoSurface()
+                    isUsingHdrSurface = false
+                    Log.d(TAG, "HDR surface detached from player")
+                }
+            }
+        })
+        
+        // If surface is already created, attach immediately
+        if (surfaceView.holder.surface != null && surfaceView.holder.surface.isValid) {
+            exoPlayer?.setVideoSurface(surfaceView.holder.surface)
+            isUsingHdrSurface = true
+            Log.d(TAG, "HDR surface immediately attached to player")
+        }
+    }
+    
+    /**
+     * Clears the HDR surface and reverts to the texture-based surface if available.
+     */
+    fun clearHdrSurface() {
+        hdrSurfaceView = null
+        if (isUsingHdrSurface) {
+            exoPlayer?.clearVideoSurface()
+            isUsingHdrSurface = false
+            
+            // Revert to texture surface if available
+            surface?.let { textureSurface ->
+                exoPlayer?.setVideoSurface(textureSurface)
+                Log.d(TAG, "Reverted to texture surface")
+            }
+        }
     }
 
     /**

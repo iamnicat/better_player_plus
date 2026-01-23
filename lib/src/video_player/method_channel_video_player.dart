@@ -344,14 +344,22 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
       });
 
   @override
-  Widget buildView(int? textureId) {
+  Widget buildView(int? textureId, {bool enableHdr = false}) {
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       return UiKitView(
         viewType: 'com.jhomlala/better_player',
         creationParamsCodec: const StandardMessageCodec(),
         creationParams: {'textureId': textureId!},
       );
+    } else if (defaultTargetPlatform == TargetPlatform.android && enableHdr) {
+      // Use platform view with SurfaceView for HDR support on Android
+      return AndroidView(
+        viewType: 'better_player_plus/hdr_player_view',
+        creationParamsCodec: const StandardMessageCodec(),
+        creationParams: {'textureId': textureId!},
+      );
     } else {
+      // Default: use Texture widget (TextureView) - no HDR support
       return Texture(textureId: textureId!);
     }
   }

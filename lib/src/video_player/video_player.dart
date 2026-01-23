@@ -165,6 +165,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   /// Constructs a [VideoPlayerController] and creates video controller on platform side.
   VideoPlayerController({
     this.bufferingConfiguration = const BetterPlayerBufferingConfiguration(),
+    this.enableHdr = false,
     bool autoCreate = true,
   }) : super(VideoPlayerValue(duration: null)) {
     if (autoCreate) {
@@ -173,6 +174,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   }
 
   final BetterPlayerBufferingConfiguration bufferingConfiguration;
+  final bool enableHdr;
 
   final StreamController<VideoEvent> videoEventStreamController = StreamController.broadcast();
   final Completer<void> _creatingCompleter = Completer<void>();
@@ -650,7 +652,9 @@ class _VideoPlayerState extends State<VideoPlayer> {
   }
 
   @override
-  Widget build(BuildContext context) => _textureId == null ? Container() : _videoPlayerPlatform.buildView(_textureId);
+  Widget build(BuildContext context) => _textureId == null
+      ? Container()
+      : _videoPlayerPlatform.buildView(_textureId, enableHdr: widget.controller!.enableHdr);
 }
 
 /// Used to configure the [VideoProgressIndicator] widget's colors for how it

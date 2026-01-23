@@ -41,6 +41,7 @@ class BetterPlayerConfiguration {
     this.autoDispose = true,
     this.expandToFill = true,
     this.useRootNavigator = false,
+    this.enableHdr = false,
   });
 
   /// Play the video as soon as it's displayed
@@ -154,6 +155,13 @@ class BetterPlayerConfiguration {
   ///Default value is false.
   final bool useRootNavigator;
 
+  /// Enable HDR mode on Android (uses platform views with SurfaceView).
+  /// When enabled and playing HDR content on an HDR-capable device, video
+  /// will be rendered in HDR. TextureView (default) does not support HDR output.
+  /// Set to true for HDR content, false for SDR. Default is false.
+  /// Note: This option only affects Android. iOS always uses platform views.
+  final bool enableHdr;
+
   BetterPlayerConfiguration copyWith({
     double? aspectRatio,
     bool? autoPlay,
@@ -184,6 +192,7 @@ class BetterPlayerConfiguration {
     bool? autoDispose,
     bool? expandToFill,
     bool? useRootNavigator,
+    bool? enableHdr,
   }) => BetterPlayerConfiguration(
     aspectRatio: aspectRatio ?? this.aspectRatio,
     autoPlay: autoPlay ?? this.autoPlay,
@@ -214,5 +223,6 @@ class BetterPlayerConfiguration {
     autoDispose: autoDispose ?? this.autoDispose,
     expandToFill: expandToFill ?? this.expandToFill,
     useRootNavigator: useRootNavigator ?? this.useRootNavigator,
+    enableHdr: enableHdr ?? this.enableHdr,
   );
 }

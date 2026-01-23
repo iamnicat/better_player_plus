@@ -197,7 +197,10 @@ abstract class VideoPlayerPlatform {
   }
 
   /// Returns a widget displaying the video with a given textureID.
-  Widget buildView(int? textureId) {
+  ///
+  /// If [enableHdr] is true, uses platform views with SurfaceView for HDR
+  /// support on Android. Default is false (uses TextureView).
+  Widget buildView(int? textureId, {bool enableHdr = false}) {
     throw UnimplementedError('buildView() has not been implemented.');
   }
 
@@ -469,7 +472,14 @@ class VideoEvent {
           colorSpace == other.colorSpace;
 
   @override
-  int get hashCode => eventType.hashCode ^ duration.hashCode ^ size.hashCode ^ buffered.hashCode ^ isHdr.hashCode ^ hdrFormat.hashCode ^ colorSpace.hashCode;
+  int get hashCode =>
+      eventType.hashCode ^
+      duration.hashCode ^
+      size.hashCode ^
+      buffered.hashCode ^
+      isHdr.hashCode ^
+      hdrFormat.hashCode ^
+      colorSpace.hashCode;
 }
 
 /// Type of the event.
