@@ -234,8 +234,15 @@ class BetterPlayerController {
 
     ///Build videoPlayerController if null
     if (videoPlayerController == null) {
-      // Auto-detect HDR if not explicitly set and on Android
-      bool shouldEnableHdr = betterPlayerConfiguration.enableHdr;
+      // TODO(hdr): Re-enable HDR auto-detection once platform view integration is complete.
+      // Currently disabled because HDR mode uses platform views which aren't
+      // properly coordinated with the texture-based rendering.
+      final bool shouldEnableHdr = betterPlayerConfiguration.enableHdr;
+
+      // DISABLED: Auto-detect HDR if not explicitly set and on Android
+      // The current HDR implementation creates both TextureView and SurfaceView
+      // but they conflict, causing a white screen
+      /* 
       if (!shouldEnableHdr && Platform.isAndroid) {
         // Try to detect HDR from video URL/path
         try {
@@ -257,7 +264,8 @@ class BetterPlayerController {
           // Continue with original enableHdr value
         }
       }
-      
+      */
+
       videoPlayerController = VideoPlayerController(
         bufferingConfiguration: betterPlayerDataSource.bufferingConfiguration,
         enableHdr: shouldEnableHdr,
