@@ -6,6 +6,7 @@ import 'package:better_player_plus/src/configuration/better_player_buffering_con
 import 'package:better_player_plus/src/core/better_player_utils.dart';
 import 'package:better_player_plus/src/video_player/video_player_platform_interface.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -255,10 +256,7 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
   @override
   Future<bool> isHdrVideo(String videoPath) async {
     try {
-      final bool? result = await _channel.invokeMethod<bool>(
-        'isHdrVideo',
-        <String, dynamic>{'videoPath': videoPath},
-      );
+      final bool? result = await _channel.invokeMethod<bool>('isHdrVideo', <String, dynamic>{'videoPath': videoPath});
       return result ?? false;
     } catch (e) {
       // Method not implemented on this platform or error occurred
@@ -371,6 +369,9 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
         viewType: 'better_player_plus/hdr_player_view',
         creationParamsCodec: const StandardMessageCodec(),
         creationParams: {'textureId': textureId!},
+        // These parameters help ensure correct composition for SurfaceView
+        layoutDirection: TextDirection.ltr,
+        hitTestBehavior: PlatformViewHitTestBehavior.transparent,
       );
     } else {
       // Default: use Texture widget (TextureView) - no HDR support
