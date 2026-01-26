@@ -49,7 +49,10 @@ class _BetterPlayerSubtitlesDrawerState extends State<BetterPlayerSubtitlesDrawe
       _configuration = setupDefaultConfiguration();
     }
 
-    widget.betterPlayerController.videoPlayerController!.addListener(_updateState);
+    // Only add listener if videoPlayerController is initialized
+    if (widget.betterPlayerController.videoPlayerController != null) {
+      widget.betterPlayerController.videoPlayerController!.addListener(_updateState);
+    }
 
     _outerTextStyle = TextStyle(
       fontSize: _configuration!.fontSize,
@@ -71,14 +74,17 @@ class _BetterPlayerSubtitlesDrawerState extends State<BetterPlayerSubtitlesDrawe
 
   @override
   void dispose() {
-    widget.betterPlayerController.videoPlayerController!.removeListener(_updateState);
+    // Only remove listener if videoPlayerController exists
+    if (widget.betterPlayerController.videoPlayerController != null) {
+      widget.betterPlayerController.videoPlayerController!.removeListener(_updateState);
+    }
     _visibilityStreamSubscription.cancel();
     super.dispose();
   }
 
   ///Called when player state has changed, i.e. new player position, etc.
   void _updateState() {
-    if (mounted) {
+    if (mounted && widget.betterPlayerController.videoPlayerController != null) {
       setState(() {
         _latestValue = widget.betterPlayerController.videoPlayerController!.value;
       });
