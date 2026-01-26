@@ -23,6 +23,13 @@ class BetterPlayerPlatformView(
     private val surfaceView: SurfaceView = SurfaceView(context)
     
     init {
+        // Essential for SurfaceView to be visible in Flutter
+        surfaceView.setZOrderMediaOverlay(true)
+        surfaceView.layoutParams = android.view.ViewGroup.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        )
+
         // Attach the SurfaceView to the player if it exists
         playerRegistry.getPlayer(textureId)?.setHdrSurface(surfaceView)
     }
